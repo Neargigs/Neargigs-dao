@@ -1,71 +1,64 @@
-/*!
-Some hypothetical DeFi contract that will do smart things with the transferred tokens
-*/
-use near_contract_standards::fungible_token::{receiver::FungibleTokenReceiver, Balance};
+// Import necessary modules and macros
+use near_contract_standards::fungible_token::metadata::{FungibleTokenMetadata, FungibleTokenMetadataProvider};
+use near_contract_standards::fungible_token::FungibleToken;
+use near_sdk::{env, near_bindgen, AccountId, PanicOnDefault, PromiseOrValue};
 use near_sdk::json_types::U128;
-use near_sdk::{env, log, near, require, AccountId, Gas, PanicOnDefault, PromiseOrValue};
+use near_sdk::collections::LazyOption;
 
-const BASE_GAS: u64 = 5_000_000_000_000;
-const PROMISE_CALL: u64 = 5_000_000_000_000;
-const GAS_FOR_FT_ON_TRANSFER: Gas = Gas::from_gas(BASE_GAS + PROMISE_CALL);
-
+// Define the contract structure
+#[near_bindgen]
 #[derive(PanicOnDefault)]
-#[near(contract_state)]
-pub struct DeFi {
-    fungible_token_account_id: AccountId,
+pub struct TokenContract {
+    token: FungibleToken,
+    metadata: LazyOption<FungibleTokenMetadata>,
 }
 
-// Have to repeat the same trait for our own implementation.
-#[allow(dead_code)]
-trait ValueReturnTrait {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128>;
-}
-
-#[near]
-impl DeFi {
+#[near_bindgen]
+impl TokenContract {
+    // Initialize the contract with the total supply and token details
     #[init]
-    pub fn new(fungible_token_account_id: AccountId) -> Self {
-        require!(!env::state_exists(), "Already initialized");
-        Self { fungible_token_account_id: fungible_token_account_id.into() }
-    }
-}
+    pub fn new(owner_id: AccountId, total_supply: U128) -> Self {
+        // Create a new FungibleToken instance
+        let mut token = FungibleToken::new(b"t".to_vec());
 
-#[near]
-impl FungibleTokenReceiver for DeFi {
-    /// If given `msg: "take-my-money", immediately returns U128::From(0)
-    /// Otherwise, makes a cross-contract call to own `value_please` function, passing `msg`
-    /// value_please will attempt to parse `msg` as an integer and return a U128 version of it
-    fn ft_on_transfer(
-        &mut self,
-        sender_id: AccountId,
-        amount: U128,
-        msg: String,
-    ) -> PromiseOrValue<U128> {
-        // Verifying that we were called by fungible token contract that we expect.
-        require!(
-            env::predecessor_account_id() == self.fungible_token_account_id,
-            "Only supports the one fungible token contract"
-        );
-        log!("in {} tokens from @{} ft_on_transfer, msg = {}", amount.0, sender_id, msg);
-        match msg.as_str() {
-            "take-my-money" => PromiseOrValue::Value(U128::from(0)),
-            _ => {
-                let prepaid_gas = env::prepaid_gas();
-                let account_id = env::current_account_id();
-                Self::ext(account_id)
-                    .with_static_gas(prepaid_gas.saturating_sub(GAS_FOR_FT_ON_TRANSFER))
-                    .value_please(msg)
-                    .into()
-            }
+        // Mint the initial supply to the owner's account
+        token.internal_register_account(&owner_id);
+        token.internal_deposit(&owner_id, total_supply.0);
+
+        // Set the token metadata (name, symbol, etc.)
+        let metadata = FungibleTokenMetadata {
+            spec: "ft-1.0.0".to_string(),
+            name: "NGIG".to_string(), // <-- Set your token name here
+            symbol: "NGIG".to_string(), // <-- Set your token symbol here
+            decimals: 18, // Typically 18 decimals for fungible tokens
+            icon: None, // Optionally, add a link to a token icon
+            reference: None,
+            reference_hash: None,
+        };
+
+        // Return the new TokenContract instance
+        Self {
+            token,
+            metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
         }
     }
-}
 
-#[near]
-impl ValueReturnTrait for DeFi {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128> {
-        log!("in value_please, amount_to_return = {}", amount_to_return);
-        let amount: Balance = amount_to_return.parse().expect("Not an integer");
-        PromiseOrValue::Value(amount.into())
+    // Function to get the total supply of the token
+    pub fn total_supply(&self) -> U128 {
+        self.token.total_supply().into()
+    }
+
+    // Function to transfer tokens
+    pub fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128) {
+        self.token.internal_transfer(&env::predecessor_account_id(), &receiver_id, amount.0, None);
     }
 }
+
+// Implement the FungibleTokenMetadataProvider to provide metadata info
+#[near_bindgen]
+impl FungibleTokenMetadataProvider for TokenContract {
+    fn ft_metadata(&self) -> FungibleTokenMetadata {
+        self.metadata.get().unwrap()
+    }
+}
+
