@@ -5,11 +5,13 @@ authors = ["Near Inc <hello@nearprotocol.com>"]
 edition = "2021"
 
 [dependencies]
-near-sdk = { path = "../../../near-sdk" }
-near-contract-standards = { path = "../../../near-contract-standards" }
+near-sdk = { path = "./near-sdk" }
+near-contract-standards = { path = "./near-contract-standards" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [dev-dependencies] 
-near-sdk = { path = "../../../near-sdk", features = ["unit-testing"] }
+near-sdk = { path = "./near-sdk", features = ["unit-testing"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
